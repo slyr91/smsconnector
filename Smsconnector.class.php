@@ -717,6 +717,12 @@ class Smsconnector extends FreePBX_Helpers implements BMO
 		foreach ($providers as $provider => $creds)
 		{
 			$this->setProviderConfig($provider, $creds);
+			// Allow providers to implement post-save logic (e.g. webhook registration)
+			// without modifying providerBase. Safe for all existing providers.
+			$providerClass = $this->providers[strtolower($provider)]['class'] ?? null;
+			if ($providerClass && method_exists($providerClass, 'onConfigSaved')) {
+				$providerClass->onConfigSaved();
+			}
 		}
 		return true;
 	}
