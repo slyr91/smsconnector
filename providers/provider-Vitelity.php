@@ -88,19 +88,37 @@ class Vitelity extends providerBase
         }
     }
 
-    public function onConfigSaved(): void
+    public function onConfigSaved(array $dids = []): void
     {
-        // Automatically register the FreePBX webhook URL with Vitelity
-        // whenever credentials are saved, so inbound SMS is delivered here.
-        try {
-            $this->registerWebhookUrl($this->getWebHookUrl());
-            freepbx_log(FPBX_LOG_INFO, sprintf(_("%s: Webhook URL successfully registered"), $this->nameRaw));
-        } catch (\Exception $e) {
-            freepbx_log(FPBX_LOG_ERROR, sprintf(_("%s: Failed to register webhook URL: %s"), $this->nameRaw, $e->getMessage()));
+        // Register the webhook for each DID already assigned to this provider.
+        // If no DIDs are assigned yet, there is nothing to register.
+        if (empty($dids)) {
+            freepbx_log(FPBX_LOG_INFO, sprintf(_("%s: No DIDs assigned, skipping webhook registration"), $this->nameRaw));
+            return;
+        }
+        $webhookUrl = $this->getWebHookUrl();
+        foreach ($dids as $did) {
+            try {
+                $this->registerWebhookUrl($webhookUrl, $did);
+                freepbx_log(FPBX_LOG_INFO, sprintf(_("%s: Webhook URL registered for DID %s"), $this->nameRaw, $did));
+            } catch (\Exception $e) {
+                freepbx_log(FPBX_LOG_ERROR, sprintf(_("%s: Failed to register webhook URL for DID %s: %s"), $this->nameRaw, $did, $e->getMessage()));
+            }
         }
     }
 
-    public function registerWebhookUrl($webhookUrl): void
+    public function onDIDAssigned(string $did): void
+    {
+        // Called whenever a DID is assigned or reassigned to this provider.
+        try {
+            $this->registerWebhookUrl($this->getWebHookUrl(), $did);
+            freepbx_log(FPBX_LOG_INFO, sprintf(_("%s: Webhook URL registered for DID %s"), $this->nameRaw, $did));
+        } catch (\Exception $e) {
+            freepbx_log(FPBX_LOG_ERROR, sprintf(_("%s: Failed to register webhook URL for DID %s: %s"), $this->nameRaw, $did, $e->getMessage()));
+        }
+    }
+
+    public function registerWebhookUrl($webhookUrl, $did = null): void
     {
         $config = $this->getConfig($this->nameRaw);
 
@@ -111,9 +129,14 @@ class Vitelity extends providerBase
             'url'   => $webhookUrl,
         ];
 
+        if ($did !== null) {
+            // Vitelity expects a 10-digit NANP number; strip the leading country code if present.
+            $params['did'] = preg_replace('/^1([2-9]\d{9})$/', '$1', $did);
+        }
+
         // NOTE: smsenableurl uses a different base URL than sendsms
-        $url     = "https://api.vitelity.net/api.php?" . http_build_query($params);
-        $session = \FreePBX::Curl()->requests($url);
+        $url      = "https://api.vitelity.net/api.php?" . http_build_query($params);
+        $session  = \FreePBX::Curl()->requests($url);
         $response = $session->get('', [], []);
 
         freepbx_log(FPBX_LOG_INFO, sprintf(_("%s smsenableurl responds: HTTP %s, %s"), $this->nameRaw, $response->status_code, $response->body));
