@@ -127,6 +127,13 @@ class Vitelity extends providerBase
     {
         $return_code = 202;
 
+        if ($_SERVER['REQUEST_METHOD'] === "GET") {
+            // Vitelity validates the webhook URL with a GET request before registering it.
+            // Respond with 'ok' so the smsenableurl command accepts the URL as valid.
+            echo 'ok';
+            return 200;
+        }
+
         if ($_SERVER['REQUEST_METHOD'] === "POST") {
             $postdata = $_POST;
 
